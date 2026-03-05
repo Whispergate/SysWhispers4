@@ -39,11 +39,14 @@ class InvocationMethod(str, Enum):
 
 class ResolutionMethod(str, Enum):
     """How the Syscall Service Number (SSN) is obtained."""
-    Static      = "static"       # Embedded from j00ru table at generation time
-    FreshyCalls = "freshycalls"  # Sort ntdll Nt* exports by VA → index = SSN
-    HellsGate   = "hells_gate"   # Read SSN from ntdll stub opcode bytes
-    HalosGate   = "halos_gate"   # HellsGate + neighbor scan when hooked
-    TartarusGate= "tartarus"     # HalosGate + handles near/far JMP hooks
+    Static        = "static"         # Embedded from j00ru table at generation time
+    FreshyCalls   = "freshycalls"    # Sort ntdll Nt* exports by VA -> index = SSN
+    HellsGate     = "hells_gate"     # Read SSN from ntdll stub opcode bytes
+    HalosGate     = "halos_gate"     # HellsGate + neighbor scan when hooked
+    TartarusGate  = "tartarus"       # HalosGate + handles near/far JMP hooks
+    SyscallsFromDisk = "from_disk"   # Load clean ntdll from KnownDlls/disk, read SSNs
+    RecycledGate  = "recycled"       # Combine: sort by VA + validate with opcode check
+    HWBreakpoint  = "hw_breakpoint"  # Hardware breakpoints + VEH to extract SSN
 
     def __str__(self) -> str:
         return self.value
@@ -97,17 +100,22 @@ class GeneratorConfig:
     prefix:      str = "SW4"
 
     # Obfuscation / evasion options
-    obfuscate:   bool = False    # Randomize stub/function name prefix
-    encrypt_ssn: bool = False    # XOR-encrypt SSN table at rest
-    stack_spoof: bool = False    # Include synthetic call stack frame
-    etw_bypass:  bool = False    # Include ETW user-mode patch
+    obfuscate:    bool = False    # Randomize stub/function name prefix
+    encrypt_ssn:  bool = False    # XOR-encrypt SSN table at rest
+    stack_spoof:  bool = False    # Include synthetic call stack frame
+    etw_bypass:   bool = False    # Include ETW user-mode patch
+    amsi_bypass:  bool = False    # Include AMSI patch (AmsiScanBuffer)
+    unhook_ntdll: bool = False    # Remap clean ntdll .text over hooked one
+    anti_debug:   bool = False    # Anti-debugging checks (PEB, timing, instrumentation)
+    sleep_encrypt: bool = False   # Sleep obfuscation with memory encryption (Ekko-style)
+    string_encrypt: bool = False  # Compile-time string encryption
 
     # Static resolution: path to syscall table JSON
     syscall_table: Optional[str] = None
 
     # Internal: resolved data (populated by generator)
     _prototypes:  List[SyscallPrototype] = field(default_factory=list, repr=False)
-    _ssn_table:   dict = field(default_factory=dict, repr=False)  # name → {build: ssn}
+    _ssn_table:   dict = field(default_factory=dict, repr=False)  # name -> {build: ssn}
 
     def files(self) -> dict[str, str]:
         """Return map of {filename: extension} for generated files."""

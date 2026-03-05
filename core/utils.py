@@ -52,6 +52,27 @@ def ror13_hash(name: str) -> int:
     return h & 0xFFFFFFFF
 
 
+def crc32_hash(name: str) -> int:
+    """CRC32 hash of a function name (unsigned 32-bit)."""
+    crc = 0xFFFFFFFF
+    for ch in name.encode("ascii"):
+        crc ^= ch
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0xEDB88320
+            else:
+                crc >>= 1
+    return crc ^ 0xFFFFFFFF
+
+
+def fnv1a_hash(name: str) -> int:
+    """FNV-1a hash of a function name (32-bit)."""
+    h = 0x811C9DC5
+    for ch in name.encode("ascii"):
+        h = ((h ^ ch) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
 def get_current_build_from_table(ssn_table: dict, func_name: str) -> int | None:
     """
     Return the SSN for the most recent Windows build in the table.
@@ -76,7 +97,7 @@ def get_ssn_for_build(ssn_table: dict, func_name: str, build: int) -> int | None
     # Exact match first
     if str(build) in entry:
         return entry[str(build)]
-    # Find nearest build ≤ requested
+    # Find nearest build <= requested
     numeric_keys = sorted([int(k) for k in entry.keys() if k.isdigit()])
     candidates = [b for b in numeric_keys if b <= build]
     if candidates:
@@ -98,7 +119,10 @@ def banner() -> str:
  |____/  \__, |   \_/\_/  |_| |_|_|___/| .__/ \___|_|      |_|
           |___/                         |_|
  Direct/Indirect/Randomized/Egg Syscalls - Windows 7 through 11 24H2
- Techniques: FreshyCalls · Hell's Gate · Halo's Gate · Tartarus' Gate
- Methods:    Embedded · Indirect · Randomized · Egg Hunt
- Arches:     x64 · x86 · WoW64 · ARM64
+ Techniques: FreshyCalls | Hell's/Halo's/Tartarus' Gate | RecycledGate
+             SyscallsFromDisk | HW Breakpoint
+ Methods:    Embedded | Indirect | Randomized | Egg Hunt
+ Evasion:    ETW Bypass | AMSI Bypass | ntdll Unhooking | Anti-Debug
+             Sleep Encryption | Stack Spoofing | SSN Encryption
+ Arches:     x64 | x86 | WoW64 | ARM64
 """

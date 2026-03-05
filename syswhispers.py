@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """
-SysWhispers4 — Direct/Indirect/Randomized/Egg Syscall Generator
-Windows 7 through Windows 11 24H2 · x64 · x86 · WoW64 · ARM64
+SysWhispers4 -- Direct/Indirect/Randomized/Egg Syscall Generator
+Windows 7 through Windows 11 24H2 -- x64 -- x86 -- WoW64 -- ARM64
 
 Techniques implemented:
-  SSN Resolution : Static | FreshyCalls | Hell's Gate | Halo's Gate | Tartarus' Gate
+  SSN Resolution : Static | FreshyCalls | Hell's Gate | Halo's Gate |
+                   Tartarus' Gate | SyscallsFromDisk | RecycledGate | HW Breakpoint
   Invocation     : Embedded (direct) | Indirect | Randomized Indirect | Egg Hunt
-  Evasion        : XOR SSN encryption | Call stack spoofing | ETW bypass
+  Evasion        : XOR SSN encryption | Call stack spoofing | ETW bypass |
+                   AMSI bypass | ntdll unhooking | Anti-debug | Sleep encryption
   Compilers      : MSVC (MASM) | MinGW | Clang
 
 Usage examples:
   python syswhispers.py --preset common
   python syswhispers.py --preset injection --method indirect --resolve freshycalls
+  python syswhispers.py --preset stealth --method randomized --resolve recycled \\
+                         --obfuscate --encrypt-ssn --etw-bypass --amsi-bypass
+  python syswhispers.py --preset all --method egg --resolve from_disk \\
+                         --unhook-ntdll --anti-debug --stack-spoof
   python syswhispers.py --functions NtAllocateVirtualMemory,NtCreateThreadEx \\
-                         --method randomized --resolve halos_gate --obfuscate
-  python syswhispers.py --preset all --method egg --resolve tartarus \\
-                         --encrypt-ssn --etw-bypass -o MySyscalls
+                         --method randomized --resolve tartarus --obfuscate
 
 References:
   SysWhispers  : https://github.com/jthuraisamy/SysWhispers
@@ -92,8 +96,8 @@ def _validate_functions(functions: list[str]) -> None:
 
 def _print_banner() -> None:
     print(banner())
-    print("  Version : 4.0.0")
-    print("  Author  : community / based on SysWhispers 1-3")
+    print("  Version : 4.1.0")
+    print("  Author  : CyberSecurityUP / community")
     print()
 
 
@@ -104,28 +108,43 @@ def _print_banner() -> None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="syswhispers.py",
-        description="SysWhispers4 — NT syscall stub generator with EDR evasion techniques",
+        description="SysWhispers4 -- NT syscall stub generator with advanced EDR evasion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Resolution methods:
   static        Embed SSNs from bundled j00ru table (run update_syscall_table.py first)
-  freshycalls   Sort ntdll Nt* exports by VA → index = SSN  [DEFAULT, hook-resistant]
+  freshycalls   Sort ntdll Nt* exports by VA -> index = SSN  [DEFAULT, hook-resistant]
   hells_gate    Read SSN from ntdll stub (fails if hooked)
   halos_gate    Hell's Gate + neighbor scan to handle hooked functions
   tartarus      Tartarus' Gate: handles near JMP (E9) and far JMP (FF 25) hooks
+  from_disk     Load clean ntdll from \\KnownDlls and read SSNs (bypasses ALL hooks)
+  recycled      RecycledGate: FreshyCalls + opcode cross-validation (most resilient)
+  hw_breakpoint Hardware breakpoints + VEH to extract SSN (advanced)
 
 Invocation methods:
-  embedded      syscall instruction in our stub — direct syscall  [DEFAULT]
+  embedded      syscall instruction in our stub -- direct syscall  [DEFAULT]
   indirect      jmp to syscall;ret gadget inside ntdll (RIP appears in ntdll)
   randomized    jmp to a RANDOM syscall;ret gadget in ntdll per call (anti-RIP)
-  egg           8-byte egg marker replaced at runtime — no static syscall bytes
+  egg           8-byte egg marker replaced at runtime -- no static syscall bytes
+
+Presets:
+  common        General process/thread/memory operations (25 functions)
+  injection     Process/shellcode injection via APC, threads, sections (20 functions)
+  evasion       AV/EDR evasion queries and operations (15 functions)
+  token         Token manipulation (6 functions)
+  stealth       Maximum evasion: injection + evasion + unhooking (31 functions)
+  file_ops      File I/O via NT syscalls (7 functions)
+  transaction   Process doppelganging / transaction rollback (7 functions)
+  all           All supported functions (62 functions)
 
 Examples:
   python syswhispers.py --preset common
-  python syswhispers.py --preset injection --method indirect --resolve freshycalls
-  python syswhispers.py --functions NtAllocateVirtualMemory,NtCreateThreadEx
-  python syswhispers.py --preset all --method randomized --resolve tartarus \\
-                         --obfuscate --encrypt-ssn --stack-spoof
+  python syswhispers.py --preset stealth --method randomized --resolve recycled \\
+                         --obfuscate --encrypt-ssn --stack-spoof --etw-bypass
+  python syswhispers.py --preset injection --method indirect --resolve from_disk \\
+                         --unhook-ntdll --amsi-bypass
+  python syswhispers.py --preset all --method egg --resolve tartarus \\
+                         --anti-debug --sleep-encrypt
 """,
     )
 
@@ -134,7 +153,7 @@ Examples:
     sel.add_argument(
         "-p", "--preset",
         metavar="PRESET[,PRESET...]",
-        help="Preset: common, injection, evasion, token, all",
+        help="Preset: common, injection, evasion, token, stealth, file_ops, transaction, all",
     )
     sel.add_argument(
         "-f", "--functions",
@@ -173,7 +192,8 @@ Examples:
         choices=[r.value for r in ResolutionMethod],
         default=ResolutionMethod.FreshyCalls.value,
         metavar="RESOLVE",
-        help="SSN resolution: freshycalls (default), static, hells_gate, halos_gate, tartarus",
+        help="SSN resolution: freshycalls (default), static, hells_gate, halos_gate, "
+             "tartarus, from_disk, recycled, hw_breakpoint",
     )
 
     # ---- Evasion options --------------------------------------------------
@@ -197,6 +217,26 @@ Examples:
         "--etw-bypass",
         action="store_true",
         help="Include optional user-mode ETW writer patch (see SW4PatchEtw)",
+    )
+    eva.add_argument(
+        "--amsi-bypass",
+        action="store_true",
+        help="Include AMSI bypass (patches AmsiScanBuffer)",
+    )
+    eva.add_argument(
+        "--unhook-ntdll",
+        action="store_true",
+        help="Include ntdll unhooking (remaps clean .text from KnownDlls)",
+    )
+    eva.add_argument(
+        "--anti-debug",
+        action="store_true",
+        help="Include anti-debugging checks (PEB, timing, heap flags, debug port)",
+    )
+    eva.add_argument(
+        "--sleep-encrypt",
+        action="store_true",
+        help="Include sleep encryption (Ekko-style XOR .text during sleep)",
     )
 
     # ---- Static table override -------------------------------------------
@@ -263,8 +303,8 @@ def main() -> None:
         print("  Available presets:")
         for name, data in presets.items():
             funcs = data["functions"]
-            print(f"    {name:12s} — {data['description']}")
-            print(f"              ({len(funcs)} functions: {', '.join(funcs[:4])}{'...' if len(funcs) > 4 else ''})")
+            print(f"    {name:14s} -- {data['description']}")
+            print(f"                ({len(funcs)} functions: {', '.join(funcs[:4])}{'...' if len(funcs) > 4 else ''})")
         return
 
     # ---- Validate inputs -------------------------------------------------
@@ -284,23 +324,31 @@ def main() -> None:
         print( "  [i] Run scripts/update_syscall_table.py to fetch the latest j00ru table.\n")
 
     if args.etw_bypass:
-        print("  [!] ETW bypass enabled — for authorized use only.\n")
+        print("  [!] ETW bypass enabled -- for authorized use only.\n")
+    if args.amsi_bypass:
+        print("  [!] AMSI bypass enabled -- for authorized use only.\n")
+    if args.unhook_ntdll:
+        print("  [!] ntdll unhooking enabled -- for authorized use only.\n")
 
     # ---- Build config ----------------------------------------------------
     cfg = GeneratorConfig(
-        functions    = functions,
-        arch         = Architecture(args.arch),
-        compiler     = Compiler(args.compiler),
-        method       = InvocationMethod(args.method),
-        resolve      = ResolutionMethod(args.resolve),
-        prefix       = args.prefix.rstrip("_") + "_",
-        out_file     = args.out_file,
-        out_dir      = args.out_dir,
-        obfuscate    = args.obfuscate,
-        encrypt_ssn  = args.encrypt_ssn,
-        stack_spoof  = args.stack_spoof,
-        etw_bypass   = args.etw_bypass,
-        syscall_table= args.syscall_table,
+        functions       = functions,
+        arch            = Architecture(args.arch),
+        compiler        = Compiler(args.compiler),
+        method          = InvocationMethod(args.method),
+        resolve         = ResolutionMethod(args.resolve),
+        prefix          = args.prefix.rstrip("_") + "_",
+        out_file        = args.out_file,
+        out_dir         = args.out_dir,
+        obfuscate       = args.obfuscate,
+        encrypt_ssn     = args.encrypt_ssn,
+        stack_spoof     = args.stack_spoof,
+        etw_bypass      = args.etw_bypass,
+        amsi_bypass     = args.amsi_bypass,
+        unhook_ntdll    = args.unhook_ntdll,
+        anti_debug      = args.anti_debug,
+        sleep_encrypt   = args.sleep_encrypt,
+        syscall_table   = args.syscall_table,
     )
 
     # ---- Summary ---------------------------------------------------------
@@ -310,10 +358,14 @@ def main() -> None:
     print(f"  Resolution : {cfg.resolve}")
     print(f"  Method     : {cfg.method}")
     print(f"  Prefix     : {cfg.prefix}")
-    if cfg.obfuscate:   print( "  Obfuscate  : yes (stub reordering + junk instructions)")
-    if cfg.encrypt_ssn: print( "  Encrypt SSN: yes (XOR key embedded at compile time)")
-    if cfg.stack_spoof: print( "  Stack spoof: yes (synthetic call stack helper)")
-    if cfg.etw_bypass:  print( "  ETW bypass : yes (user-mode EtwEventWrite patch)")
+    if cfg.obfuscate:     print( "  Obfuscate  : yes (stub reordering + junk instructions)")
+    if cfg.encrypt_ssn:   print( "  Encrypt SSN: yes (XOR key embedded at compile time)")
+    if cfg.stack_spoof:   print( "  Stack spoof: yes (synthetic call stack helper)")
+    if cfg.etw_bypass:    print( "  ETW bypass : yes (user-mode EtwEventWrite patch)")
+    if cfg.amsi_bypass:   print( "  AMSI bypass: yes (AmsiScanBuffer patch)")
+    if cfg.unhook_ntdll:  print( "  Unhook     : yes (remap clean ntdll from KnownDlls)")
+    if cfg.anti_debug:    print( "  Anti-debug : yes (PEB, timing, heap, debug port, instrumentation)")
+    if cfg.sleep_encrypt: print( "  Sleep crypt: yes (Ekko-style XOR .text during sleep)")
     print()
 
     # ---- Generate --------------------------------------------------------
@@ -337,9 +389,9 @@ def main() -> None:
     if cfg.compiler == Compiler.MSVC:
         print(f"      Add to MSVC project:")
         print(f"        {out_base}_Types.h  {out_base}.h  {out_base}.c  {out_base}.asm")
-        print(f"      Enable MASM: Project → Build Customizations → masm (.targets)")
+        print(f"      Enable MASM: Project -> Build Customizations -> masm (.targets)")
         if cfg.method == InvocationMethod.Egg:
-            print(f"      Call SW4HatchEggs() before any syscall functions.")
+            print(f"      Call {cfg.prefix}HatchEggs() before any syscall functions.")
         elif cfg.resolve != ResolutionMethod.Static or cfg.method != InvocationMethod.Embedded:
             print(f"      Call {cfg.prefix}Initialize() at startup.")
     else:
@@ -348,8 +400,16 @@ def main() -> None:
         print(f"      Compile with: -masm=intel")
         print(f"      Call {cfg.prefix}Initialize() at startup.")
 
+    if cfg.unhook_ntdll:
+        print(f"      Call {cfg.prefix}UnhookNtdll() BEFORE {cfg.prefix}Initialize() for best results.")
     if cfg.etw_bypass:
         print(f"      Optionally call {cfg.prefix}PatchEtw() to suppress user-mode ETW.")
+    if cfg.amsi_bypass:
+        print(f"      Optionally call {cfg.prefix}PatchAmsi() to bypass AMSI scanning.")
+    if cfg.anti_debug:
+        print(f"      Call {cfg.prefix}AntiDebugCheck() to verify clean environment.")
+    if cfg.sleep_encrypt:
+        print(f"      Use {cfg.prefix}SleepEncrypt(ms) instead of Sleep() to encrypt memory during sleep.")
 
     print()
     print("  [+] Done.")

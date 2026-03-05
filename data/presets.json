@@ -30,7 +30,7 @@
     ]
   },
   "injection": {
-    "description": "Functions for process/shellcode injection",
+    "description": "Functions for process/shellcode injection (APC, thread, section)",
     "functions": [
       "NtAllocateVirtualMemory",
       "NtFreeVirtualMemory",
@@ -48,11 +48,14 @@
       "NtMapViewOfSection",
       "NtCreateSection",
       "NtQueueApcThread",
+      "NtQueueApcThreadEx",
+      "NtAlertResumeThread",
+      "NtTestAlert",
       "NtClose"
     ]
   },
   "evasion": {
-    "description": "Functions useful for AV/EDR evasion",
+    "description": "Functions useful for AV/EDR evasion and detection bypass",
     "functions": [
       "NtQueryInformationProcess",
       "NtSetInformationProcess",
@@ -63,7 +66,12 @@
       "NtTerminateProcess",
       "NtOpenProcess",
       "NtDuplicateObject",
-      "NtFlushInstructionCache"
+      "NtFlushInstructionCache",
+      "NtOpenSection",
+      "NtMapViewOfSection",
+      "NtUnmapViewOfSection",
+      "NtProtectVirtualMemory",
+      "NtSetInformationVirtualMemory"
     ]
   },
   "token": {
@@ -77,6 +85,67 @@
       "NtImpersonateThread"
     ]
   },
+  "stealth": {
+    "description": "Maximum evasion: injection + evasion + unhooking support functions",
+    "functions": [
+      "NtAllocateVirtualMemory",
+      "NtFreeVirtualMemory",
+      "NtWriteVirtualMemory",
+      "NtReadVirtualMemory",
+      "NtProtectVirtualMemory",
+      "NtQueryVirtualMemory",
+      "NtCreateThreadEx",
+      "NtOpenProcess",
+      "NtSuspendThread",
+      "NtResumeThread",
+      "NtGetContextThread",
+      "NtSetContextThread",
+      "NtUnmapViewOfSection",
+      "NtMapViewOfSection",
+      "NtCreateSection",
+      "NtOpenSection",
+      "NtQueueApcThread",
+      "NtQueueApcThreadEx",
+      "NtTestAlert",
+      "NtAlertResumeThread",
+      "NtClose",
+      "NtQueryInformationProcess",
+      "NtSetInformationProcess",
+      "NtQueryInformationThread",
+      "NtSetInformationThread",
+      "NtQuerySystemInformation",
+      "NtDuplicateObject",
+      "NtFlushInstructionCache",
+      "NtContinue",
+      "NtDelayExecution",
+      "NtSetInformationVirtualMemory",
+      "NtWaitForSingleObject"
+    ]
+  },
+  "file_ops": {
+    "description": "File I/O operations via NT syscalls",
+    "functions": [
+      "NtCreateFile",
+      "NtOpenFile",
+      "NtWriteFile",
+      "NtReadFile",
+      "NtDeleteFile",
+      "NtClose",
+      "NtQueryObject"
+    ]
+  },
+  "transaction": {
+    "description": "Transaction functions (for process doppelganging / hollowing)",
+    "functions": [
+      "NtCreateTransaction",
+      "NtRollbackTransaction",
+      "NtCommitTransaction",
+      "NtCreateSection",
+      "NtCreateProcessEx",
+      "NtCreateThreadEx",
+      "NtClose"
+    ]
+  },
   "all": {
     "description": "All supported functions",
     "functions": [
@@ -87,6 +156,7 @@
       "NtReadVirtualMemory",
       "NtProtectVirtualMemory",
       "NtQueryVirtualMemory",
+      "NtSetInformationVirtualMemory",
       "NtCreateThreadEx",
       "NtOpenProcess",
       "NtOpenThread",
@@ -106,6 +176,7 @@
       "NtUnmapViewOfSection",
       "NtMapViewOfSection",
       "NtCreateSection",
+      "NtOpenSection",
       "NtQueryInformationProcess",
       "NtSetInformationProcess",
       "NtQueryInformationThread",
@@ -116,6 +187,9 @@
       "NtQueueApcThreadEx",
       "NtCreateFile",
       "NtOpenFile",
+      "NtWriteFile",
+      "NtReadFile",
+      "NtDeleteFile",
       "NtCreateProcess",
       "NtCreateProcessEx",
       "NtCreateUserProcess",
@@ -127,7 +201,18 @@
       "NtImpersonateThread",
       "NtContinue",
       "NtFlushInstructionCache",
-      "NtQueryObject"
+      "NtQueryObject",
+      "NtCreateTransaction",
+      "NtRollbackTransaction",
+      "NtCommitTransaction",
+      "NtCreateEvent",
+      "NtSetEvent",
+      "NtResetEvent",
+      "NtCreateTimer",
+      "NtSetTimer",
+      "NtTestAlert",
+      "NtAlertResumeThread",
+      "NtAlertThread"
     ]
   }
 }

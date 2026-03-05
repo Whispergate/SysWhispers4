@@ -1,6 +1,7 @@
 """
 SysWhispers4 - Obfuscation Utilities
-Provides name randomization, stub ordering, and SSN encryption helpers.
+Provides name randomization, stub ordering, SSN encryption, string encryption,
+and junk instruction injection helpers.
 """
 from __future__ import annotations
 import random
@@ -25,6 +26,12 @@ class Obfuscator:
         """Replace a known prefix in base with a random one (for stub symbols)."""
         suffix = "".join(self._rng.choices(string.ascii_letters + string.digits, k=6))
         return f"_SW4_{suffix}_{base}"
+
+    def random_var_name(self, length: int = 8) -> str:
+        """Generate a random variable name for obfuscation."""
+        first = self._rng.choice(string.ascii_letters + "_")
+        rest = "".join(self._rng.choices(string.ascii_letters + string.digits + "_", k=length - 1))
+        return first + rest
 
     # -----------------------------------------------------------------------
     # Stub / function ordering randomization
@@ -57,19 +64,66 @@ class Obfuscator:
         )
 
     # -----------------------------------------------------------------------
+    # Compile-time string encryption
+    # -----------------------------------------------------------------------
+
+    def generate_string_key(self) -> int:
+        """Generate an 8-bit key for compile-time string XOR."""
+        return self._rng.randint(0x01, 0xFE)
+
+    @staticmethod
+    def encrypt_string_c(s: str, key: int, var_name: str) -> str:
+        """Return C code for an XOR-encrypted string with inline decryptor."""
+        encoded = [((b ^ key) & 0xFF) for b in s.encode("ascii")]
+        encoded.append(key)  # null terminator: 0x00 ^ key = key
+        hex_arr = ", ".join(f"0x{b:02X}" for b in encoded)
+        return (
+            f"static BYTE {var_name}_enc[] = {{ {hex_arr} }};\n"
+            f"static __inline char* {var_name}_dec(void) {{\n"
+            f"    for (int i = 0; i < sizeof({var_name}_enc); i++)\n"
+            f"        {var_name}_enc[i] ^= 0x{key:02X};\n"
+            f"    return (char*){var_name}_enc;\n"
+            f"}}\n"
+        )
+
+    # -----------------------------------------------------------------------
     # Junk instruction insertion (for ASM stubs)
     # -----------------------------------------------------------------------
 
     def junk_nops(self, count: int | None = None) -> str:
         """Return a random sequence of harmless x64 instructions (MASM syntax)."""
-        n = count if count is not None else self._rng.randint(1, 4)
+        n = count if count is not None else self._rng.randint(1, 5)
         ops = [
             "nop",
             "xchg ax, ax",
             "lea r11, [r11]",
             f"mov r11d, 0{self._rng.randint(0, 0xFF):02X}h",
+            # Additional junk variety
+            "nop DWORD PTR [rax]",
+            "nop DWORD PTR [rax + 00h]",
+            "xchg r11, r11",
+            f"test r11d, 0{self._rng.randint(1, 0xFF):02X}h",
+            f"cmp r11d, 0{self._rng.randint(1, 0xFF):02X}h",
+            "lea rsp, [rsp + 00h]",
+            "xor r11d, r11d\n    or r11d, r11d",
+            f"push 0{self._rng.randint(0, 0xFF):02X}h\n    pop r11",
+            "fnop",
+            "nop WORD PTR [rax + rax]",
         ]
         return "\n    ".join(self._rng.choices(ops, k=n))
+
+    def junk_nops_gas(self, count: int | None = None) -> str:
+        """Return junk instructions for GAS inline assembly."""
+        n = count if count is not None else self._rng.randint(1, 4)
+        ops = [
+            "nop",
+            "xchg ax, ax",
+            "lea r11, [r11]",
+            f"mov r11d, {self._rng.randint(0, 0xFF)}",
+            "xchg r11, r11",
+            "nop dword ptr [rax]",
+        ]
+        return "\\n\"\n        \"".join(self._rng.choices(ops, k=n))
 
     # -----------------------------------------------------------------------
     # Egg value generation
@@ -90,3 +144,11 @@ class Obfuscator:
         """Return MASM DB directive for the 8-byte egg."""
         b = list(egg.to_bytes(8, "little"))
         return "DB " + ", ".join(f"{x:02X}h" for x in b)
+
+    # -----------------------------------------------------------------------
+    # Guard page token generation (for anti-debug)
+    # -----------------------------------------------------------------------
+
+    def generate_canary(self) -> int:
+        """Generate a 32-bit canary value for integrity checks."""
+        return self._rng.randint(0x10000000, 0xEFFFFFFF)
